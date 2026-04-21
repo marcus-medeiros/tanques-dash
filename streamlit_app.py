@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# DASHBOARD STREAMLIT + MQTT + SQLITE OTIMIZADO
+# DASHBOARD TANQUES - MQTT + SQLITE (OTIMIZADO E ATUALIZADO)
 
 import streamlit as st
 import pandas as pd
@@ -10,13 +10,16 @@ from datetime import datetime
 import queue
 import sqlite3
 import altair as alt
+import os
 
 # --- CONFIG ---
 BROKER = "broker.hivemq.com"
+PORT = 1883
 TOPIC = "PROJETOS/IOT/VOLUMES/SENSOR/#"
-DB = "tanques.db"
 
-# --- BANCO (OTIMIZADO) ---
+DB = os.path.join(os.getcwd(), "tanques.db")
+
+# --- BANCO DE DADOS ---
 
 def init_db():
     conn = sqlite3.connect(DB, check_same_thread=False)
@@ -50,14 +53,17 @@ def load_data():
         "SELECT * FROM leituras ORDER BY timestamp DESC LIMIT 500",
         conn
     )
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     return df
 
-# --- MQTT ---
+# --- MQTT (API NOVA) ---
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        print("MQTT conectado")
         client.subscribe(TOPIC)
+    else:
+        print("Erro MQTT:", reason_code)
 
 def on_message(client, userdata, msg):
     try:
@@ -82,21 +88,27 @@ def init_mqtt():
 
     if 'mqtt' not in st.session_state:
         client = mqtt.Client(
-        userdata=st.session_state.msg_queue,
-        protocol=mqtt.MQTTv311,
-        transport="tcp",
-        callback_api_version=5
+            userdata=st.session_state.queue,
+            protocol=mqtt.MQTTv311,
+            transport="tcp",
+            callback_api_version=5
         )
+
         client.on_connect = on_connect
         client.on_message = on_message
-        client.connect(BROKER, 1883, 60)
+
+        client.connect(BROKER, PORT, 60)
         client.loop_start()
+
         st.session_state.mqtt = client
 
 # --- STREAMLIT ---
 
 st.set_page_config(layout="wide")
-st.title("💧 Tanques - MQTT + Banco Otimizado")
+st.title("💧 Monitoramento de Tanques (MQTT + Banco)")
+
+# DEBUG opcional
+st.caption(f"Banco em: {DB}")
 
 conn = init_db()
 init_mqtt()
@@ -105,11 +117,11 @@ init_mqtt()
 if 'buffer' not in st.session_state:
     st.session_state.buffer = []
 
-# --- PROCESSA FILA ---
+# --- PROCESSA FILA MQTT ---
 while not st.session_state.queue.empty():
     st.session_state.buffer.append(st.session_state.queue.get())
 
-# --- SALVA EM LOTE (a cada 10 registros) ---
+# --- INSERT EM LOTE ---
 if len(st.session_state.buffer) >= 10:
     insert_lote(conn, st.session_state.buffer)
     st.session_state.buffer = []
@@ -118,7 +130,6 @@ if len(st.session_state.buffer) >= 10:
 df = load_data()
 
 tanques = ["TANQUEA", "TANQUEB", "TANQUEC"]
-
 cols = st.columns(3)
 
 for i, t in enumerate(tanques):
@@ -131,25 +142,37 @@ for i, t in enumerate(tanques):
         st.metric("Nível", f"{valor:.1f}%")
 
         if valor < 20:
-            st.error("Baixo")
+            st.error("⚠️ Baixo")
         elif valor > 90:
-            st.warning("Cheio")
+            st.warning("⚠️ Cheio")
         else:
             st.success("Normal")
 
 # --- GRÁFICO ---
 st.markdown("---")
 
-tanque_sel = st.selectbox("Tanque", tanques)
+tanque_sel = st.selectbox("Selecione o tanque", tanques)
 
 df_sel = df[df['tanque'] == tanque_sel].sort_values("timestamp")
 
 if not df_sel.empty:
     chart = alt.Chart(df_sel).mark_line().encode(
         x='timestamp:T',
-        y=alt.Y('nivel:Q', scale=alt.Scale(domain=[0,100]))
-    )
+        y=alt.Y('nivel:Q', title="Nível (%)", scale=alt.Scale(domain=[0, 100])),
+        tooltip=['timestamp', 'nivel']
+    ).interactive()
+
     st.altair_chart(chart, use_container_width=True)
+
+    # tabela formatada
+    df_display = df_sel.copy()
+    df_display['timestamp'] = pd.to_datetime(df_display['timestamp'], errors='coerce')
+    df_display['timestamp'] = df_display['timestamp'].dt.strftime("%d/%m/%Y %H:%M:%S")
+
+    st.dataframe(df_display.tail(20), use_container_width=True)
+
+else:
+    st.info("Sem dados ainda...")
 
 # --- AUTO REFRESH ---
 time.sleep(2)

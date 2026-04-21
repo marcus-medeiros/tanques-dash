@@ -31,56 +31,76 @@ df = carregar_dados()
 
 tanques = ["TANQUEA", "TANQUEB", "TANQUEC"]
 
-# --- Métricas no topo ---
-st.subheader("📊 Nível Atual")
+# --- KPIs ---
+st.subheader("📊 Indicadores")
 
-cols = st.columns(3)
-for i, t in enumerate(tanques):
-    df_t = df[df["tanque"] == t] if not df.empty else pd.DataFrame()
-    valor = df_t.iloc[0]["nivel"] if not df_t.empty else 0
+cols = st.columns(4)
 
-    with cols[i]:
-        st.metric(t, f"{valor:.1f} %")
+if not df.empty:
+    df = df.sort_values("timestamp")
+
+    ultimos = {}
+    for t in tanques:
+        df_t = df[df["tanque"] == t]
+        ultimos[t] = df_t.iloc[-1]["nivel"] if not df_t.empty else 0
+
+    media = sum(ultimos.values()) / len(tanques)
+    minimo = min(ultimos.values())
+    maximo = max(ultimos.values())
+
+    with cols[0]:
+        st.metric("Média (%)", f"{media:.1f}")
+
+    with cols[1]:
+        st.metric("Mínimo (%)", f"{minimo:.1f}")
+
+    with cols[2]:
+        st.metric("Máximo (%)", f"{maximo:.1f}")
+
+    with cols[3]:
+        st.metric("Δ Máx-Mín", f"{(maximo - minimo):.1f}")
+
+else:
+    for i in range(4):
+        cols[i].metric("—", "0")
 
 st.markdown("---")
 
-# --- Layout por tanque ---
-for t in tanques:
-    st.subheader(f"🔹 {t}")
+# --- GRÁFICO GERAL ---
+st.subheader("📈 Evolução dos Tanques")
 
-    col_grafico, col_tabela = st.columns([2, 1])
+if not df.empty:
+    chart = alt.Chart(df).mark_line().encode(
+        x=alt.X("timestamp:T", title="Tempo"),
+        y=alt.Y("nivel:Q", title="Nível (%)", scale=alt.Scale(domain=[0, 100])),
+        color=alt.Color("tanque:N", title="Tanque"),
+        tooltip=["timestamp", "tanque", "nivel"]
+    ).interactive()
 
-    df_t = df[df["tanque"] == t] if not df.empty else pd.DataFrame()
+    st.altair_chart(chart, use_container_width=True)
 
-    if not df_t.empty:
-        df_t = df_t.sort_values("timestamp")
+else:
+    st.warning("Sem dados ainda")
 
-        # --- GRÁFICO ---
-        with col_grafico:
-            chart = alt.Chart(df_t).mark_line().encode(
-                x=alt.X("timestamp:T", title="Tempo"),
-                y=alt.Y("nivel:Q", title="Nível (%)", scale=alt.Scale(domain=[0, 100])),
-                tooltip=["timestamp", "nivel"]
-            ).interactive()
+st.markdown("---")
 
-            st.altair_chart(chart, use_container_width=True)
+# --- TABELA CONSOLIDADA ---
+st.subheader("📋 Últimas 10 Leituras (Todos os Tanques)")
 
-        # --- TABELA (últimas 10) ---
-        with col_tabela:
-            st.markdown("##### Últimas leituras")
+if not df.empty:
+    df_display = df.copy()
 
-            df_display = df_t.tail(10).copy()
-            df_display["timestamp"] = df_display["timestamp"].dt.strftime("%H:%M:%S")
+    df_display["timestamp"] = df_display["timestamp"].dt.strftime("%d/%m %H:%M:%S")
 
-            st.dataframe(
-                df_display[["timestamp", "nivel"]].iloc[::-1],
-                use_container_width=True
-            )
+    df_display = df_display.sort_values("timestamp", ascending=False).head(10)
 
-    else:
-        st.warning(f"Nenhum dado para {t}")
+    st.dataframe(
+        df_display[["timestamp", "tanque", "nivel"]],
+        use_container_width=True
+    )
 
-    st.markdown("---")
+else:
+    st.warning("Sem dados disponíveis")
 
 # --- Auto refresh ---
 st_autorefresh(interval=2000, key="refresh")

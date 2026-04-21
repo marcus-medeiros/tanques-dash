@@ -81,7 +81,12 @@ def init_mqtt():
         st.session_state.queue = queue.Queue()
 
     if 'mqtt' not in st.session_state:
-        client = mqtt.Client(userdata=st.session_state.queue)
+        client = mqtt.Client(
+        userdata=st.session_state.msg_queue,
+        protocol=mqtt.MQTTv311,
+        transport="tcp",
+        callback_api_version=5
+        )
         client.on_connect = on_connect
         client.on_message = on_message
         client.connect(BROKER, 1883, 60)

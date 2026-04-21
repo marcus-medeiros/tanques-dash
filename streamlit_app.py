@@ -14,7 +14,7 @@ BROKER = "broker.hivemq.com"
 TOPIC = "PROJETOS/IOT/VOLUMES/SENSOR/#"
 
 # 🔥 COLE SUA URL DO APPS SCRIPT
-GOOGLE_SCRIPT_URL = "COLE_SUA_URL_AQUI"
+GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz38wQcW7H2ivA-Oo_achNXvThfrxAczZAa0-487Zes1exrFrnjcnZkTZX4TRL1yxaa/exec"
 
 # --- MQTT CALLBACKS ---
 

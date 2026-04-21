@@ -11,7 +11,7 @@ import queue
 import altair as alt
 
 # --- CONFIGURAÇÕES ---
-BROKER_ADDRESS = "test.mosquitto.org"
+BROKER_ADDRESS = "broker.hivemq.com"
 TOPIC_LEITURAS = "PROJETOS/IOT/VOLUMES/SENSOR/#"
 
 # --- MQTT ---

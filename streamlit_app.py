@@ -1,5 +1,5 @@
 # DASHBOARD TANQUES - MQTT + GOOGLE SHEETS (VERSÃO FINAL)
-
+from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 import pandas as pd
 import paho.mqtt.client as mqtt
@@ -156,4 +156,4 @@ else:
     st.info("Aguardando dados MQTT...")
 
 # --- AUTO REFRESH (SEM TRAVAR) ---
-st.autorefresh(interval=2000, key="refresh")
+st_autorefresh(interval=2000, key="refresh")

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# DASHBOARD STREAMLIT - TANQUES VIA MQTT (SEM BANCO)
+# DASHBOARD STREAMLIT + MQTT + SQLITE OTIMIZADO
 
 import streamlit as st
 import pandas as pd
@@ -8,141 +8,144 @@ import json
 import time
 from datetime import datetime
 import queue
+import sqlite3
 import altair as alt
 
-# --- CONFIGURAÇÕES ---
-BROKER_ADDRESS = "broker.hivemq.com"
-TOPIC_LEITURAS = "PROJETOS/IOT/VOLUMES/SENSOR/#"
+# --- CONFIG ---
+BROKER = "broker.hivemq.com"
+TOPIC = "PROJETOS/IOT/VOLUMES/SENSOR/#"
+DB = "tanques.db"
+
+# --- BANCO (OTIMIZADO) ---
+
+def init_db():
+    conn = sqlite3.connect(DB, check_same_thread=False)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS leituras (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tanque TEXT,
+        nivel REAL,
+        timestamp DATETIME
+    )
+    """)
+
+    conn.commit()
+    return conn
+
+def insert_lote(conn, dados_lote):
+    cursor = conn.cursor()
+
+    cursor.executemany("""
+        INSERT INTO leituras (tanque, nivel, timestamp)
+        VALUES (?, ?, ?)
+    """, dados_lote)
+
+    conn.commit()
+
+def load_data():
+    conn = sqlite3.connect(DB)
+    df = pd.read_sql_query(
+        "SELECT * FROM leituras ORDER BY timestamp DESC LIMIT 500",
+        conn
+    )
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
 
 # --- MQTT ---
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print("Conectado ao broker!")
-        client.subscribe(TOPIC_LEITURAS)
-    else:
-        print("Erro na conexão:", rc)
+        client.subscribe(TOPIC)
 
 def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode()
 
         try:
-            dados = json.loads(payload)
-            tanque = dados.get("tanque")
-            nivel = dados.get("nivel")
+            data = json.loads(payload)
+            tanque = data["tanque"]
+            nivel = data["nivel"]
         except:
             tanque = msg.topic.split("/")[-1]
             nivel = float(payload)
 
-        userdata.put({
-            "tanque": tanque,
-            "nivel": nivel
-        })
+        userdata.put((tanque, nivel, datetime.now()))
 
     except Exception as e:
         print("Erro:", e)
 
-def inicializar_mqtt():
-    if 'msg_queue' not in st.session_state:
-        st.session_state.msg_queue = queue.Queue()
+def init_mqtt():
+    if 'queue' not in st.session_state:
+        st.session_state.queue = queue.Queue()
 
-    if 'mqtt_client' not in st.session_state:
-        client = mqtt.Client(userdata=st.session_state.msg_queue)
+    if 'mqtt' not in st.session_state:
+        client = mqtt.Client(userdata=st.session_state.queue)
         client.on_connect = on_connect
         client.on_message = on_message
-
-        try:
-            client.connect(BROKER_ADDRESS, 1883, 60)
-            client.loop_start()
-            st.session_state.mqtt_client = client
-        except Exception as e:
-            st.error(f"Erro MQTT: {e}")
+        client.connect(BROKER, 1883, 60)
+        client.loop_start()
+        st.session_state.mqtt = client
 
 # --- STREAMLIT ---
 
-st.set_page_config(page_title="Tanques MQTT", layout="wide")
+st.set_page_config(layout="wide")
+st.title("💧 Tanques - MQTT + Banco Otimizado")
 
-inicializar_mqtt()
+conn = init_db()
+init_mqtt()
 
-st.title("💧 Monitoramento de Tanques (Tempo Real)")
+# --- BUFFER ---
+if 'buffer' not in st.session_state:
+    st.session_state.buffer = []
 
-# --- ESTRUTURA EM MEMÓRIA ---
-if 'dados' not in st.session_state:
-    st.session_state.dados = pd.DataFrame(columns=["tanque", "nivel", "timestamp"])
+# --- PROCESSA FILA ---
+while not st.session_state.queue.empty():
+    st.session_state.buffer.append(st.session_state.queue.get())
 
-# --- PROCESSA FILA MQTT ---
-while not st.session_state.msg_queue.empty():
-    dados = st.session_state.msg_queue.get()
-    dados['timestamp'] = datetime.now()
+# --- SALVA EM LOTE (a cada 10 registros) ---
+if len(st.session_state.buffer) >= 10:
+    insert_lote(conn, st.session_state.buffer)
+    st.session_state.buffer = []
 
-    st.session_state.dados = pd.concat(
-        [st.session_state.dados, pd.DataFrame([dados])],
-        ignore_index=True
-    )
-
-# --- LIMITA TAMANHO (evita travar) ---
-MAX_PONTOS = 500
-if len(st.session_state.dados) > MAX_PONTOS:
-    st.session_state.dados = st.session_state.dados.tail(MAX_PONTOS)
-
-df = st.session_state.dados
-
-# --- DASHBOARD PRINCIPAL ---
+# --- CARREGA DADOS ---
+df = load_data()
 
 tanques = ["TANQUEA", "TANQUEB", "TANQUEC"]
-col1, col2, col3 = st.columns(3)
 
-for i, tanque in enumerate(tanques):
-    df_tanque = df[df['tanque'] == tanque]
+cols = st.columns(3)
 
-    if not df_tanque.empty:
-        ultimo = df_tanque.iloc[-1]['nivel']
-    else:
-        ultimo = 0
+for i, t in enumerate(tanques):
+    df_t = df[df['tanque'] == t]
 
-    col = [col1, col2, col3][i]
+    valor = df_t.iloc[0]['nivel'] if not df_t.empty else 0
 
-    with col:
-        st.subheader(tanque)
-        st.metric("Nível Atual", f"{ultimo:.2f} %")
+    with cols[i]:
+        st.subheader(t)
+        st.metric("Nível", f"{valor:.1f}%")
 
-        # Alarmes simples
-        if ultimo < 20:
-            st.error("Nível Baixo")
-        elif ultimo > 90:
-            st.warning("Quase cheio")
+        if valor < 20:
+            st.error("Baixo")
+        elif valor > 90:
+            st.warning("Cheio")
         else:
             st.success("Normal")
 
 # --- GRÁFICO ---
-
 st.markdown("---")
-st.subheader("📊 Histórico")
 
-tanque_sel = st.selectbox("Selecione o tanque:", tanques)
+tanque_sel = st.selectbox("Tanque", tanques)
 
-df_sel = df[df['tanque'] == tanque_sel]
+df_sel = df[df['tanque'] == tanque_sel].sort_values("timestamp")
 
 if not df_sel.empty:
-    chart = alt.Chart(df_sel.tail(50)).mark_line().encode(
+    chart = alt.Chart(df_sel).mark_line().encode(
         x='timestamp:T',
-        y=alt.Y('nivel:Q', title="Nível (%)", scale=alt.Scale(domain=[0,100])),
-        tooltip=['timestamp', 'nivel']
-    ).interactive()
-
+        y=alt.Y('nivel:Q', scale=alt.Scale(domain=[0,100]))
+    )
     st.altair_chart(chart, use_container_width=True)
 
-    # tabela
-    df_display = df_sel.copy()
-    df_display['timestamp'] = pd.to_datetime(df_display['timestamp'], errors='coerce')
-    df_display['timestamp'] = df_display['timestamp'].dt.strftime("%d/%m/%Y %H:%M:%S")
-
-    st.dataframe(df_display.sort_index(ascending=False), use_container_width=True)
-
-else:
-    st.info("Sem dados ainda...")
-
 # --- AUTO REFRESH ---
-time.sleep(0.5)
+time.sleep(2)
 st.rerun()

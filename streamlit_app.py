@@ -144,5 +144,5 @@ else:
     st.info("Sem dados ainda...")
 
 # --- AUTO REFRESH ---
-time.sleep(1)
+time.sleep(0.5)
 st.rerun()

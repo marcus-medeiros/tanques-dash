@@ -28,13 +28,12 @@ def carregar_dados():
         return pd.DataFrame()
 
 df = carregar_dados()
-
 tanques = ["TANQUEA", "TANQUEB", "TANQUEC"]
 
 # --- KPIs ---
-st.subheader("📊 Indicadores")
+st.subheader("📊 Nível Atual dos Tanques")
 
-cols = st.columns(4)
+cols = st.columns(3)
 
 if not df.empty:
     df = df.sort_values("timestamp")
@@ -45,28 +44,33 @@ if not df.empty:
         ultimos[t] = df_t.iloc[-1]["nivel"] if not df_t.empty else 0
 
     media = sum(ultimos.values()) / len(tanques)
-    minimo = min(ultimos.values())
-    maximo = max(ultimos.values())
 
-    with cols[0]:
-        st.metric("Média (%)", f"{media:.1f}")
+    for i, t in enumerate(tanques):
+        valor = ultimos[t]
+        delta = valor - media
 
-    with cols[1]:
-        st.metric("Mínimo (%)", f"{minimo:.1f}")
+        # seta visual
+        if delta > 0:
+            indicador = "🟢"
+        elif delta < 0:
+            indicador = "🔴"
+        else:
+            indicador = "⚪"
 
-    with cols[2]:
-        st.metric("Máximo (%)", f"{maximo:.1f}")
-
-    with cols[3]:
-        st.metric("Δ Máx-Mín", f"{(maximo - minimo):.1f}")
+        with cols[i]:
+            st.metric(
+                label=f"{t}",
+                value=f"{valor:.1f} %",
+                delta=f"{indicador} {delta:+.1f} vs média"
+            )
 
 else:
-    for i in range(4):
-        cols[i].metric("—", "0")
+    for i, t in enumerate(tanques):
+        cols[i].metric(t, "0 %")
 
 st.markdown("---")
 
-# --- GRÁFICO GERAL ---
+# --- GRÁFICO ---
 st.subheader("📈 Evolução dos Tanques")
 
 if not df.empty:
@@ -84,8 +88,8 @@ else:
 
 st.markdown("---")
 
-# --- TABELA CONSOLIDADA ---
-st.subheader("📋 Últimas 10 Leituras (Todos os Tanques)")
+# --- TABELA ---
+st.subheader("📋 Últimas 10 Leituras")
 
 if not df.empty:
     df_display = df.copy()

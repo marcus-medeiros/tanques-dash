@@ -4,7 +4,7 @@ import requests
 import altair as alt
 from streamlit_autorefresh import st_autorefresh
 
-API_URL = "https://seu-app.onrender.com/dados"
+API_URL = "https://tanques-dash.onrender.com"
 
 st.set_page_config(layout="wide")
 st.title("💧 Monitoramento de Tanques")

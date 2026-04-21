@@ -1,5 +1,5 @@
-# DASHBOARD TANQUES - MQTT + GOOGLE SHEETS (VERSÃO FINAL)
-from streamlit_autorefresh import st_autorefresh
+# DASHBOARD TANQUES - MQTT + API (VERSÃO ESTÁVEL)
+
 import streamlit as st
 import pandas as pd
 import paho.mqtt.client as mqtt
@@ -8,13 +8,14 @@ from datetime import datetime
 import queue
 import requests
 import altair as alt
+from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIG ---
 BROKER = "broker.hivemq.com"
 TOPIC = "PROJETOS/IOT/VOLUMES/SENSOR/#"
 
-# 🔥 COLE SUA URL DO APPS SCRIPT
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz38wQcW7H2ivA-Oo_achNXvThfrxAczZAa0-487Zes1exrFrnjcnZkTZX4TRL1yxaa/exec"
+# 🔥 SUA API NO RENDER
+API_URL = "https://seu-app.onrender.com/dados"
 
 # --- MQTT CALLBACKS ---
 
@@ -37,7 +38,7 @@ def on_message(client, userdata, msg):
         userdata.put((tanque, nivel, datetime.now()))
 
     except Exception as e:
-        print("Erro:", e)
+        print("Erro MQTT:", e)
 
 # --- INIT MQTT ---
 
@@ -56,28 +57,38 @@ def init_mqtt():
 
         st.session_state.mqtt = client
 
-# --- STREAMLIT CONFIG ---
+# --- ENVIO PARA API ---
+
+def enviar_para_api(dado):
+    try:
+        requests.post(API_URL, json=dado, timeout=1)
+    except:
+        pass  # evita travar
+
+# --- LEITURA DA API ---
+
+def carregar_dados():
+    try:
+        r = requests.get(API_URL, timeout=2)
+        data = r.json()
+
+        df = pd.DataFrame(data)
+
+        if not df.empty:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+
+        return df
+
+    except Exception as e:
+        st.warning(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame()
+
+# --- STREAMLIT ---
 
 st.set_page_config(layout="wide")
-st.title("💧 Monitoramento de Tanques")
+st.title("💧 Monitoramento de Tanques (API)")
 
 init_mqtt()
-
-# --- ESTADOS ---
-
-if 'dados' not in st.session_state:
-    st.session_state.dados = []
-
-if 'buffer_envio' not in st.session_state:
-    st.session_state.buffer_envio = []
-
-# --- FUNÇÃO ENVIO GOOGLE SHEETS ---
-
-def enviar_para_sheets(dado):
-    try:
-        requests.post(GOOGLE_SCRIPT_URL, json=dado, timeout=2)
-    except Exception as e:
-        print("Erro envio:", e)
 
 # --- PROCESSA MQTT ---
 
@@ -90,24 +101,11 @@ while not st.session_state.queue.empty():
         "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    st.session_state.dados.append(dado)
-    st.session_state.buffer_envio.append(dado)
+    enviar_para_api(dado)
 
-# --- ENVIO CONTROLADO (evita spam) ---
+# --- CARREGA DADOS DA API ---
 
-if len(st.session_state.buffer_envio) >= 3:
-    enviar_para_sheets(st.session_state.buffer_envio[-1])
-    st.session_state.buffer_envio = []
-
-# --- DATAFRAME ---
-
-df = pd.DataFrame(
-    st.session_state.dados,
-    columns=["tanque", "nivel", "timestamp"]
-)
-
-if not df.empty:
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+df = carregar_dados()
 
 # --- DASHBOARD ---
 
@@ -117,7 +115,7 @@ cols = st.columns(3)
 for i, t in enumerate(tanques):
     df_t = df[df["tanque"] == t] if not df.empty else pd.DataFrame()
 
-    valor = df_t.iloc[-1]["nivel"] if not df_t.empty else 0
+    valor = df_t.iloc[0]["nivel"] if not df_t.empty else 0
 
     with cols[i]:
         st.subheader(t)
@@ -139,6 +137,8 @@ tanque_sel = st.selectbox("Selecione o tanque", tanques)
 df_sel = df[df["tanque"] == tanque_sel] if not df.empty else pd.DataFrame()
 
 if not df_sel.empty:
+    df_sel = df_sel.sort_values("timestamp")
+
     chart = alt.Chart(df_sel).mark_line().encode(
         x='timestamp:T',
         y=alt.Y('nivel:Q', scale=alt.Scale(domain=[0, 100])),
@@ -153,7 +153,7 @@ if not df_sel.empty:
     st.dataframe(df_display.tail(20), use_container_width=True)
 
 else:
-    st.info("Aguardando dados MQTT...")
+    st.info("Aguardando dados...")
 
-# --- AUTO REFRESH (SEM TRAVAR) ---
+# --- AUTO REFRESH ---
 st_autorefresh(interval=2000, key="refresh")

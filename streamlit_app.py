@@ -49,25 +49,16 @@ if not df.empty:
         valor = ultimos[t]
         delta = valor - media
 
-        # seta visual
-        if delta > 0:
-            indicador = "🟢"
-        elif delta < 0:
-            indicador = "🔴"
-        else:
-            indicador = "⚪"
-
         with cols[i]:
             st.metric(
-                label=f"{t}",
+                label=t,
                 value=f"{valor:.1f} %",
-                delta=f"{indicador} {delta:+.1f} vs média"
+                delta=f"{delta:+.1f} vs média"
             )
 
 else:
     for i, t in enumerate(tanques):
         cols[i].metric(t, "0 %")
-
 st.markdown("---")
 
 # --- GRÁFICO ---

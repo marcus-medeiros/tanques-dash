@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# DASHBOARD TANQUES - MQTT + SQLITE (OTIMIZADO E ATUALIZADO)
+# DASHBOARD TANQUES - MQTT + SQLITE (VERSÃO ESTÁVEL)
 
 import streamlit as st
 import pandas as pd
@@ -56,14 +56,14 @@ def load_data():
     df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
     return df
 
-# --- MQTT (API NOVA) ---
+# --- MQTT (API ANTIGA - COMPATÍVEL) ---
 
-def on_connect(client, userdata, flags, reason_code, properties):
-    if reason_code == 0:
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
         print("MQTT conectado")
         client.subscribe(TOPIC)
     else:
-        print("Erro MQTT:", reason_code)
+        print("Erro MQTT:", rc)
 
 def on_message(client, userdata, msg):
     try:
@@ -87,12 +87,7 @@ def init_mqtt():
         st.session_state.queue = queue.Queue()
 
     if 'mqtt' not in st.session_state:
-        client = mqtt.Client(
-            userdata=st.session_state.queue,
-            protocol=mqtt.MQTTv311,
-            transport="tcp",
-            callback_api_version=5
-        )
+        client = mqtt.Client(userdata=st.session_state.queue)
 
         client.on_connect = on_connect
         client.on_message = on_message
@@ -105,9 +100,8 @@ def init_mqtt():
 # --- STREAMLIT ---
 
 st.set_page_config(layout="wide")
-st.title("💧 Monitoramento de Tanques (MQTT + Banco)")
+st.title("💧 Monitoramento de Tanques (MQTT + SQLite)")
 
-# DEBUG opcional
 st.caption(f"Banco em: {DB}")
 
 conn = init_db()

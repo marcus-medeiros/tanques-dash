@@ -89,7 +89,10 @@ while not st.session_state.queue.empty():
     enviar_para_sheets(tanque, nivel, timestamp)
 
 # --- DATAFRAME LOCAL (tempo real) ---
-df = pd.DataFrame(st.session_state.dados)
+df = pd.DataFrame(
+    st.session_state.dados,
+    columns=["tanque", "nivel", "timestamp"]
+)
 
 # --- DASHBOARD ---
 tanques = ["TANQUEA", "TANQUEB", "TANQUEC"]

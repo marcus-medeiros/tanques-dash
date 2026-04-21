@@ -6,7 +6,10 @@ from streamlit_autorefresh import st_autorefresh
 
 API_URL = "https://tanques-dash.onrender.com/dados"
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="TanquesCM",
+    layout="wide"
+)
 st.title("💧 Monitoramento de Tanques")
 
 # --- Carregar dados ---

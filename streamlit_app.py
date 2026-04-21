@@ -135,6 +135,7 @@ if not df_sel.empty:
 
     # tabela
     df_display = df_sel.copy()
+    df_display['timestamp'] = pd.to_datetime(df_display['timestamp'], errors='coerce')
     df_display['timestamp'] = df_display['timestamp'].dt.strftime("%d/%m/%Y %H:%M:%S")
 
     st.dataframe(df_display.sort_index(ascending=False), use_container_width=True)
